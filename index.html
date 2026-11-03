@@ -50,7 +50,7 @@
         </div>
         <button class="profile-button" type="button" aria-label="Perfil">
           <span class="avatar">C</span>
-          <span class="profile-copy"><strong>Seu cantinho</strong><small>Uma jornada de cada vez</small></span>
+          <span class="profile-copy"><strong id="profile-name">Seu cantinho</strong><small>Uma jornada de cada vez</small></span>
           <span class="profile-menu" aria-hidden="true">···</span>
         </button>
       </div>
@@ -70,7 +70,7 @@
         <section class="welcome-row">
           <div>
             <p class="eyebrow"><span class="eyebrow-dot"></span> UM NOVO DIA, UMA NOVA PALAVRA</p>
-            <h1>Oi, que bom ter<br><span>você por aqui!</span> <span class="wave">✦</span></h1>
+            <h1><span id="welcome-greeting-prefix">Oi, que bom ter</span><br><span id="welcome-name">você por aqui!</span> <span class="wave">✦</span></h1>
             <p class="welcome-copy">Respire fundo. Este é o seu momento de pausa, fé e encontro com a Palavra.</p>
             <p class="welcome-message">Jesus é o caminho a verdade e a vida !!</p>
             <span class="free-distribution">Distribuição gratuita</span>
@@ -94,7 +94,11 @@
             </label>
           </div>
           <blockquote id="daily-verse"></blockquote>
-          <div class="daily-reflection"><span>PAUSA PARA REFLETIR</span><p id="daily-reflection" aria-live="polite"></p></div>
+          <div class="daily-reflection">
+            <span>PAUSA PARA REFLETIR</span>
+            <p id="daily-reflection" aria-live="polite"></p>
+            <ol class="reflection-questions" id="daily-reflection-questions" aria-label="Duas perguntas para refletir sobre a passagem" aria-live="polite"></ol>
+          </div>
           <div class="verse-card-bottom">
             <span class="verse-reference" id="daily-reference"></span>
             <div class="verse-actions">
@@ -303,6 +307,18 @@
       <p class="note-reference" id="note-reference"></p>
       <textarea id="note-text" rows="5" placeholder="O que essa passagem despertou em você?"></textarea>
       <div class="dialog-actions"><button class="secondary-button" value="cancel">Cancelar</button><button class="primary-button" id="save-note" value="save">Salvar anotação</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="welcome-name-dialog" class="welcome-name-dialog" aria-labelledby="welcome-name-title" aria-describedby="welcome-name-description">
+    <form id="welcome-name-form">
+      <span class="install-dialog-icon" aria-hidden="true">👋</span>
+      <p class="eyebrow">SEU CANTINHO</p>
+      <h2 id="welcome-name-title">Como podemos chamar você?</h2>
+      <p id="welcome-name-description">Vamos usar seu nome na saudação de entrada. Ele fica salvo somente neste dispositivo.</p>
+      <label for="welcome-name-input">Seu nome</label>
+      <input id="welcome-name-input" name="name" type="text" maxlength="40" autocomplete="given-name" placeholder="Digite seu nome" required>
+      <button class="primary-button" id="save-welcome-name" type="submit">Começar minha jornada</button>
     </form>
   </dialog>
 

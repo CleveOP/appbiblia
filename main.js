@@ -1,6 +1,9 @@
 const BIBLE_API_ROOT = "https://bible-api.com/data";
+const HELLOAO_API_ROOT = "https://bible.helloao.org/api";
 const bibleTranslations = [
-  { id: "almeida", name: "Almeida · Português" }
+  { id: "almeida", name: "Almeida (JFA) · Português", provider: "bible-api" },
+  { id: "por_bsl", name: "Bíblia Portuguesa Mundial (BPM) · Português", provider: "helloao" },
+  { id: "por_blj", name: "Bíblia Livre (BLIVRE) · Português", provider: "helloao" }
 ];
 const dailyWelcomeArtworks = [
   { title: "A criação e a luz", icon: "🌎", left: "✨", right: "🌱" },
@@ -761,6 +764,7 @@ const defaultState = {
   visitDates: [],
   quizBest: 0,
   dailyVerse: null,
+  personName: "",
   theme: "dark",
   translation: "almeida",
   currentBookId: "JHN",
@@ -853,6 +857,7 @@ function loadState() {
       kidsAnswers,
       kidsTextCache: kidsProgressIsCurrent && parsed.kidsTextCache && typeof parsed.kidsTextCache === "object" ? parsed.kidsTextCache : {},
       visitDates: Array.isArray(parsed.visitDates) ? parsed.visitDates : [],
+      personName: typeof parsed.personName === "string" ? parsed.personName.trim().slice(0, 40) : "",
       theme: "dark",
       translation: bibleTranslations.some((translation) => translation.id === parsed.translation) ? parsed.translation : "almeida",
       books: Array.isArray(parsed.books) ? parsed.books : [],
@@ -884,12 +889,42 @@ function escapeHtml(value) {
   })[character]);
 }
 
-function bibleApiBase() {
-  return `${BIBLE_API_ROOT}/${state.translation}`;
+function translationLabel(translationId = state.translation) {
+  return bibleTranslations.find((translation) => translation.id === translationId)?.name || "Almeida (JFA) · Português";
 }
 
-function translationLabel(translationId = state.translation) {
-  return bibleTranslations.find((translation) => translation.id === translationId)?.name || "Almeida · Português";
+function appendAttributionLink(container, label, href) {
+  const link = document.createElement("a");
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = label;
+  container.appendChild(link);
+}
+
+function renderTranslationAttribution(containerId, prefix, suffix = "") {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.replaceChildren(document.createTextNode(prefix));
+  if (state.translation === "por_bsl") {
+    appendAttributionLink(container, "Bíblia Portuguesa Mundial (BPM), eBible.org", "https://ebible.org/Scriptures/details.php?id=porbrbsl");
+    container.appendChild(document.createTextNode(" · domínio público; tradução em revisão."));
+  } else if (state.translation === "por_blj") {
+    appendAttributionLink(container, "Bíblia Livre (BLIVRE)", "https://ebible.org/Scriptures/details.php?id=porbr2018");
+    container.appendChild(document.createTextNode(" · © Diego Santos, Mario Sérgio e Marco Teles · "));
+    appendAttributionLink(container, "CC BY 4.0 Brasil", "https://creativecommons.org/licenses/by/4.0/br/");
+    container.appendChild(document.createTextNode("."));
+  } else {
+    container.appendChild(document.createTextNode("João Ferreira de Almeida · domínio público."));
+  }
+  container.appendChild(document.createTextNode(suffix));
+}
+
+function helloAoApiUrl(translationId, suffix = "") {
+  if (!bibleTranslations.some((translation) => translation.provider === "helloao" && translation.id === translationId)) {
+    throw new Error("Esta versão não está disponível na API de traduções.");
+  }
+  return `${HELLOAO_API_ROOT}/${translationId}/${suffix}`;
 }
 
 function normalized(value) {
@@ -946,6 +981,29 @@ function renderDailyWelcomeArt(date = new Date()) {
   document.getElementById("daily-art-accent-one").textContent = artwork.left;
   document.getElementById("daily-art-accent-two").textContent = artwork.right;
   document.getElementById("daily-art-count").textContent = `${String(index + 1).padStart(2, "0")} / 50`;
+}
+
+function renderWelcomeName() {
+  const name = state.personName.trim();
+  document.getElementById("welcome-greeting-prefix").textContent = name ? "Oi," : "Oi, que bom ter";
+  document.getElementById("welcome-name").textContent = name ? `${name}!` : "você por aqui!";
+  document.getElementById("profile-name").textContent = name || "Seu cantinho";
+  document.querySelector(".avatar").textContent = name ? Array.from(name)[0].toLocaleUpperCase("pt-BR") : "C";
+}
+
+function requestWelcomeName(edit = false) {
+  if (state.personName && !edit) {
+    renderWelcomeName();
+    return;
+  }
+  const dialog = document.getElementById("welcome-name-dialog");
+  if (!dialog.open) {
+    document.getElementById("welcome-name-input").value = state.personName;
+    document.getElementById("welcome-name-title").textContent = state.personName ? "Quer atualizar seu nome?" : "Como podemos chamar você?";
+    document.getElementById("save-welcome-name").textContent = state.personName ? "Salvar meu nome" : "Começar minha jornada";
+    dialog.showModal();
+  }
+  document.getElementById("welcome-name-input").focus();
 }
 
 function renderDailyReminder() {
@@ -1113,6 +1171,62 @@ function renderDailyFavorite() {
   button.setAttribute("aria-label", favorite ? "Remover versículo dos favoritos" : "Salvar versículo nos favoritos");
 }
 
+async function fetchHelloAoBooks(translationId) {
+  const data = await fetchJson(helloAoApiUrl(translationId, "books.json"));
+  if (data.translation?.language !== "por" || !Array.isArray(data.books) || !data.books.length) {
+    throw new Error("A API não retornou uma lista válida de livros em português.");
+  }
+  const books = data.books.filter((book) => book.isApocryphal !== true);
+  if (books.length !== data.translation.numberOfBooks) {
+    throw new Error("A API não retornou o cânon esperado para esta tradução.");
+  }
+  return books;
+}
+
+function normalizeHelloAoChapter(data) {
+  if (data.translation?.language !== "por" || !data.book || !data.chapter || !Array.isArray(data.chapter.content)) {
+    throw new Error("A API não retornou um capítulo válido em português.");
+  }
+  const verses = data.chapter.content
+    .filter((item) => item.type === "verse" && Number.isInteger(item.number) && Array.isArray(item.content))
+    .map((item) => ({
+      book: data.book.name,
+      chapter: data.chapter.number,
+      verse: item.number,
+      text: item.content.map((part) => {
+        if (typeof part === "string") return part;
+        return part && typeof part.text === "string" ? part.text : "";
+      }).join("").trim()
+    }))
+    .filter((verse) => verse.text);
+  if (!verses.length) throw new Error("A API não retornou versículos válidos para este capítulo.");
+  return { book: data.book.name, chapter: data.chapter.number, verses };
+}
+
+async function fetchBibleChapter(translationId, bookId, chapter) {
+  if (translationId === "almeida") {
+    return fetchJson(`${BIBLE_API_ROOT}/almeida/${encodeURIComponent(bookId)}/${chapter}`);
+  }
+  const data = await fetchJson(helloAoApiUrl(translationId, `${encodeURIComponent(bookId)}/${chapter}.json`));
+  if (data.translation?.id !== translationId) throw new Error("A API retornou uma versão diferente da selecionada.");
+  return normalizeHelloAoChapter(data);
+}
+
+async function fetchDailyVerse(translationId) {
+  if (translationId === "almeida") {
+    const data = await fetchJson(`${BIBLE_API_ROOT}/almeida/random/NT`);
+    if (!data.random_verse) throw new Error("A API não retornou um versículo válido.");
+    return data.random_verse;
+  }
+  const books = await fetchHelloAoBooks(translationId);
+  const availableBooks = books.filter((book) => Number.isInteger(book.numberOfChapters) && book.numberOfChapters > 0);
+  if (!availableBooks.length) throw new Error("A API não encontrou capítulos para escolher o versículo do dia.");
+  const book = availableBooks[Math.floor(Math.random() * availableBooks.length)];
+  const chapterNumber = Math.floor(Math.random() * book.numberOfChapters) + 1;
+  const chapter = await fetchBibleChapter(translationId, book.id, chapterNumber);
+  return chapter.verses[Math.floor(Math.random() * chapter.verses.length)];
+}
+
 async function loadDailyVerse() {
   const todayKey = localDateKey();
   if (state.dailyVerse && state.dailyVerse.date === todayKey && state.dailyVerse.translation === state.translation) {
@@ -1123,9 +1237,8 @@ async function loadDailyVerse() {
   const verseElement = document.getElementById("daily-verse");
   verseElement.textContent = "Buscando uma palavra para o seu dia...";
   try {
-    const data = await fetchJson(`${BIBLE_API_ROOT}/${translation}/random/NT`);
+    const verse = await fetchDailyVerse(translation);
     if (translation !== state.translation) return;
-    const verse = data.random_verse;
     if (!verse || !verse.text || !verse.book) throw new Error("A API não retornou um versículo válido.");
     state.dailyVerse = {
       date: todayKey,
@@ -1138,7 +1251,7 @@ async function loadDailyVerse() {
   } catch (error) {
     if (translation !== state.translation) return;
     verseElement.textContent = error.message;
-    document.getElementById("daily-reference").textContent = "Fonte: API bible-api.com";
+    document.getElementById("daily-reference").textContent = `Fonte: ${translationLabel(translation)}`;
     console.error("Falha ao carregar o versículo do dia.", error);
   }
 }
@@ -1147,19 +1260,20 @@ function displayDailyVerse(verse) {
   document.getElementById("daily-verse").textContent = `“${verse.text}”`;
   document.getElementById("daily-reference").textContent = verse.reference;
   document.getElementById("daily-reflection").textContent = dailyVerseReflection(verse.text);
+  renderDailyReflectionQuestions();
   renderDailyFavorite();
 }
 
 function dailyVerseReflection(text) {
   const verse = normalized(text);
   const reflections = [
-    { terms: ["love", "amor", "amou", "amado", "caridade"], text: "O amor aparece neste trecho como algo que pode ser recebido e demonstrado. Que atitude concreta de cuidado você pode praticar hoje?" },
-    { terms: ["faith", "fe", "crer", "creu", "believe", "trust", "confiar", "confianca"], text: "Este trecho toca no tema da confiança. O que ele diz e qual pequeno passo de confiança faz sentido para você hoje?" },
-    { terms: ["hope", "esperanca", "hopeful", "esperar"], text: "A esperança pode ajudar a olhar para o futuro sem negar o que é difícil agora. Que palavra deste trecho você gostaria de guardar?" },
-    { terms: ["peace", "paz", "descanso", "rest"], text: "A paz é o tema que se destaca neste trecho. O que pode ajudar você a encontrar um momento de calma e cuidado hoje?" },
-    { terms: ["forgive", "perdao", "perdoar", "misericordia"], text: "O trecho menciona perdão ou misericórdia. Que significado essas palavras têm no contexto lido, sem ignorar limites e a necessidade de segurança?" },
-    { terms: ["pray", "oracao", "orar", "prayeth"], text: "A oração aparece neste trecho. Que sentimento, pergunta ou agradecimento você gostaria de expressar com sinceridade?" },
-    { terms: ["serve", "servir", "serve", "ajudar", "help"], text: "O cuidado com outras pessoas está em destaque. Como oferecer ajuda respeitosa, perguntando do que a pessoa realmente precisa?" }
+    { terms: ["love", "amor", "amou", "amado", "caridade"], text: "Ao reler, observe como o amor aparece no versículo: como atitude, vínculo ou convite ao cuidado." },
+    { terms: ["faith", "fe", "crer", "creu", "believe", "trust", "confiar", "confianca"], text: "Leia com atenção o que este versículo diz sobre confiança e considere o contexto antes de tirar uma conclusão." },
+    { terms: ["hope", "esperanca", "hopeful", "esperar"], text: "Observe onde o versículo aponta para esperança, sem ignorar as dificuldades mencionadas ou vividas." },
+    { terms: ["peace", "paz", "descanso", "rest"], text: "Repare no que este versículo apresenta sobre paz ou descanso e em que situação essas palavras aparecem." },
+    { terms: ["forgive", "perdao", "perdoar", "misericordia"], text: "Reflita sobre a misericórdia ou o perdão no texto, lembrando que perdão não exige permanecer em uma situação de abuso." },
+    { terms: ["pray", "oracao", "orar", "prayeth"], text: "Perceba como a oração aparece neste versículo e o que ela expressa: pedido, louvor, lamento ou confiança." },
+    { terms: ["serve", "servir", "ajudar", "help"], text: "Observe quem serve ou recebe cuidado neste versículo e o que isso revela sobre responsabilidade e dignidade." }
   ];
   const reflection = reflections.find((item) => item.terms.some((term) => {
     const normalizedTerm = normalized(term);
@@ -1168,16 +1282,293 @@ function dailyVerseReflection(text) {
       word === normalizedTerm || (normalizedTerm.length >= 4 && word.startsWith(normalizedTerm))
     );
   }));
-  return reflection ? reflection.text : "Leia o trecho mais uma vez e observe o que ele comunica sobre Deus e as pessoas. Qual ideia merece acompanhar suas escolhas hoje?";
+  return reflection ? reflection.text : "Leia o versículo no contexto e observe suas palavras, imagens e ênfases antes de decidir o que ele pode significar para sua vida.";
+}
+
+const dailyReflectionQuestionGroups = [
+  [
+    "Que palavra ou expressão deste versículo parece carregar a ideia principal? O que no próprio texto sustenta essa leitura?",
+    "Que ação acontece neste versículo, e quem a realiza? Como isso ajuda a entender a mensagem?",
+    "O que o versículo afirma diretamente, e o que seria apenas uma suposição nossa?",
+    "Há uma repetição, contraste ou imagem importante? O que ela acrescenta à compreensão do texto?",
+    "Que sentimento aparece ou pode ser percebido na cena? Quais palavras do texto ajudam a notar isso?",
+    "Quem fala ou age neste versículo, e a quem? Como essa relação influencia o sentido?",
+    "Que detalhe você não tinha percebido na primeira leitura? Por que ele pode ser importante?",
+    "Se tivesse de resumir a mensagem deste versículo em uma frase fiel ao texto, qual seria?",
+    "Que pergunta honesta este versículo desperta em você, sem apressar uma resposta?",
+    "O que neste versículo é mais concreto: uma ação, uma orientação, uma promessa ou uma imagem?"
+  ],
+  [
+    "O que acontece antes e depois deste versículo? Como esse contexto ajuda a evitar uma interpretação isolada?",
+    "Quem são as pessoas envolvidas na passagem, e o que sabemos sobre a situação delas?",
+    "Que problema, necessidade ou ocasião pode ter motivado estas palavras?",
+    "A quem a mensagem foi dirigida originalmente? O que isso muda na maneira de aplicá-la hoje?",
+    "Há uma mudança de assunto, de interlocutor ou de situação ao redor do versículo?",
+    "Que parte do contexto seria importante ler antes de transformar este versículo em conselho?",
+    "O versículo é narrativa, poesia, ensino, oração ou outro tipo de texto? Como o gênero influencia sua leitura?",
+    "Existe alguma palavra que pode ter um sentido diferente no contexto bíblico? O que vale investigar antes de concluir?",
+    "Que informação do parágrafo ao redor confirma ou corrige sua primeira impressão?",
+    "Como ler este versículo junto com a passagem inteira protege contra uma conclusão apressada?"
+  ],
+  [
+    "O que este versículo revela sobre o caráter de Deus, se algo é afirmado sobre isso? Que palavras mostram essa ideia?",
+    "Como a ação de Deus é descrita aqui, e o que o texto não afirma sobre ela?",
+    "Que aspecto da relação entre Deus e as pessoas aparece neste versículo?",
+    "O versículo apresenta Deus agindo, falando, ouvindo ou sendo descrito de alguma maneira? Qual?",
+    "O que este texto pode ensinar sobre a fidelidade de Deus dentro de seu contexto?",
+    "Há algo sobre justiça, compaixão ou santidade atribuído a Deus nesta passagem?",
+    "Que imagem de Deus surge da leitura atenta, e quais detalhes sustentam essa imagem?",
+    "O versículo deixa espaço para mistério ou pergunta? Como acolher isso sem inventar uma explicação?",
+    "O que este trecho ensina sobre a iniciativa de Deus, se ela aparece no texto?",
+    "Como distinguir neste versículo aquilo que é uma afirmação explícita sobre Deus daquilo que é uma interpretação?"
+  ],
+  [
+    "Que atitude humana é descrita ou valorizada neste versículo? Ela é exemplo, alerta ou apenas parte da narrativa?",
+    "Como as pessoas respondem ao que acontece neste texto? O que sua resposta produz?",
+    "Que necessidade humana aparece aqui e merece ser vista com atenção?",
+    "O versículo mostra uma relação saudável, conflituosa ou vulnerável? Que sinais ajudam a perceber?",
+    "Quem tem voz nesta passagem e quem pode estar sem voz? O que isso convida você a observar?",
+    "Que atitude demonstrada no texto promove cuidado, dignidade ou reconciliação?",
+    "O que a pessoa deste versículo parece desejar ou temer? O que é possível afirmar com segurança?",
+    "Que consequência uma escolha descrita no versículo traz para as pessoas envolvidas?",
+    "Há alguém em situação de vulnerabilidade nesta passagem? Como o texto trata essa pessoa?",
+    "Que aspecto da experiência humana deste texto se aproxima de algo que as pessoas vivem hoje?"
+  ],
+  [
+    "Este versículo contém uma promessa explícita? Se sim, a quem foi feita e em que contexto?",
+    "Se há uma promessa, que condições ou limites aparecem na passagem? O que não devemos acrescentar a ela?",
+    "A esperança apresentada aqui é imediata, futura ou ligada a uma situação específica?",
+    "Que diferença existe entre a promessa do texto e algo que você gostaria que ele prometesse?",
+    "O versículo oferece esperança sem negar a realidade difícil? Como isso aparece?",
+    "Se nenhuma promessa está explícita, que verdade ou princípio confiável o texto apresenta?",
+    "Que resposta de confiança é sugerida pela promessa, sem transformar fé em garantia de resultado desejado?",
+    "A quem a promessa se dirige originalmente? Como respeitar esse destinatário ao refletir sobre ela?",
+    "O que neste versículo ajuda a esperar com paciência, sem exigir que tudo aconteça no nosso tempo?",
+    "Como guardar a esperança deste texto sem usar a promessa para culpar quem está sofrendo?"
+  ],
+  [
+    "Este versículo contém uma ordem ou orientação explícita? Qual é, e a quem se dirige?",
+    "Se há um mandamento, qual propósito ou cuidado parece estar por trás dele no contexto?",
+    "Que passo pequeno e responsável poderia corresponder a esta orientação hoje?",
+    "Há alguma instrução aqui que precisa ser entendida junto com o restante da passagem?",
+    "Como obedecer ao princípio do texto sem aplicá-lo de forma rígida ou prejudicial?",
+    "A orientação é dirigida a uma pessoa, a uma comunidade ou a um grupo específico?",
+    "O que poderia dificultar a prática dessa instrução e que apoio saudável seria necessário?",
+    "Como diferenciar uma ordem bíblica de uma descrição do que alguém fez na narrativa?",
+    "Que limite ético ajuda a aplicar esta orientação sem ferir a dignidade de ninguém?",
+    "Se nenhuma ordem aparece, que valor ou princípio o versículo convida a considerar?"
+  ],
+  [
+    "Há um pecado ou uma injustiça nomeada neste texto? Se houver, o que exatamente é condenado?",
+    "Que escolha descrita na passagem causa dano ou afasta as pessoas do que é justo?",
+    "O versículo apresenta um alerta? Qual perigo ele identifica, sem exagerar seu alcance?",
+    "Que atitude seria importante evitar à luz deste texto, se o próprio contexto sustenta esse alerta?",
+    "O texto diferencia erro, tentação, sofrimento e responsabilidade? O que podemos notar?",
+    "Há alguma consequência de uma ação mencionada? Como o versículo a descreve sem transformar sofrimento em culpa?",
+    "O que este versículo questiona em nossos hábitos, motivações ou relações, se algo é questionado?",
+    "Como reconhecer uma falha sem cair em vergonha destrutiva ou condenação de outra pessoa?",
+    "Que forma de injustiça a passagem denuncia, se houver, e quem é prejudicado por ela?",
+    "Se não há pecado explícito neste versículo, que pergunta sobre responsabilidade ele ainda permite fazer?"
+  ],
+  [
+    "Este versículo menciona Jesus ou se conecta a algum ensinamento dele? O que o texto diz de fato?",
+    "Que atitude de Jesus descrita na passagem merece ser observada antes de tentar imitá-la?",
+    "Como este texto se relaciona com o amor ao próximo ensinado por Jesus, se a ligação for adequada?",
+    "O que a passagem ensina sobre o Reino de Deus, caso esse tema apareça no contexto?",
+    "Que diferença o texto apresenta entre poder usado para servir e poder usado para dominar?",
+    "Há uma pessoa acolhida ou restaurada na passagem? Como a ação de Jesus é descrita?",
+    "Como ler este versículo à luz de Jesus sem ignorar o sentido original do texto?",
+    "Que pergunta este versículo nos leva a fazer sobre seguir Jesus na vida cotidiana?",
+    "A passagem mostra compaixão, confronto ou ambos? Que necessidade está em jogo?",
+    "Que aspecto do caminho de Jesus este texto convida a investigar com mais cuidado?"
+  ],
+  [
+    "O que seria confiar neste versículo sem fingir que dúvidas ou dificuldades não existem?",
+    "A confiança mencionada tem um objeto claro no texto? Em quem ou em que ela repousa?",
+    "Que diferença o versículo sugere entre confiança e controle sobre os resultados?",
+    "Há espaço para perguntas ou lamento nesta passagem? Como isso se relaciona com a fé?",
+    "Que decisão concreta poderia expressar confiança sem colocar você ou outra pessoa em risco?",
+    "O que neste texto merece ser recebido com confiança e o que ainda precisa de discernimento?",
+    "A passagem fala de fé como crença, fidelidade, ação ou relação? O que indica essa nuance?",
+    "Que medo ou incerteza é reconhecido no contexto, e como o texto responde a ele?",
+    "Como uma comunidade poderia apoiar alguém que tenta viver a confiança descrita aqui?",
+    "Se a confiança não aparece diretamente, que atitude de honestidade o texto permite diante de Deus?"
+  ],
+  [
+    "Que sofrimento ou dificuldade aparece no contexto, e o versículo o reconhece ou responde a ele?",
+    "Este texto fala de esperança em meio à dor ou promete que não haverá dor? Qual das duas coisas ele afirma?",
+    "Que consolo é oferecido aqui, e a quem ele se dirige?",
+    "Como este versículo pode acompanhar alguém que está sofrendo sem oferecer respostas simplistas?",
+    "Que cuidado prático poderia ser necessário além das palavras deste texto?",
+    "O que a passagem ensina sobre perseverança sem exigir que alguém suporte abuso ou perigo?",
+    "Que motivo de esperança aparece no versículo, se houver, e qual é sua base?",
+    "Como acolher a tristeza presente sem perder de vista a esperança que o texto oferece?",
+    "O texto dá espaço para lamentar, pedir ajuda ou esperar? Como isso aparece?",
+    "Que frase deste versículo poderia ser oferecida com sensibilidade a alguém em dificuldade?"
+  ],
+  [
+    "Quem recebe cuidado, justiça ou misericórdia neste texto? Que necessidade é atendida?",
+    "Que ação concreta de amor aparece na passagem, além de uma declaração de intenção?",
+    "Como este versículo trata pessoas com menos poder ou proteção?",
+    "Que mudança nas relações humanas o texto parece buscar, se isso estiver explícito?",
+    "Há uma injustiça que a passagem chama a corrigir? Qual resposta seria responsável?",
+    "Como ajudar alguém de modo respeitoso, ouvindo primeiro o que essa pessoa precisa?",
+    "O que este versículo ensina sobre tratar o próximo com dignidade, sem apagar limites pessoais?",
+    "Quem poderia ser excluído ou esquecido se este texto fosse aplicado de maneira incompleta?",
+    "Como o cuidado descrito aqui pode se tornar uma atitude prática e segura nesta semana?",
+    "Que aspecto de justiça e compaixão precisa permanecer unido ao interpretar esta passagem?"
+  ],
+  [
+    "Que decisão este versículo ajuda a avaliar? Que princípios do próprio texto são relevantes?",
+    "O que a passagem ensina sobre escutar antes de julgar ou responder?",
+    "Que consequência provável uma escolha descrita no texto pode trazer?",
+    "Que conselho responsável você extrairia desta passagem sem tratá-la como fórmula para todos os casos?",
+    "Que informação adicional seria prudente buscar antes de aplicar esta ideia a uma situação difícil?",
+    "Como este versículo ajuda a distinguir uma reação impulsiva de uma resposta ponderada?",
+    "Que voz sábia e confiável poderia ajudar você a discernir a aplicação deste texto?",
+    "Há contraste entre sabedoria e insensatez no contexto? O que define cada caminho?",
+    "Que decisão respeita tanto o ensinamento bíblico quanto os limites e a segurança das pessoas?",
+    "O que permanece incerto nesta leitura e merece ser estudado ou conversado com alguém maduro?"
+  ],
+  [
+    "Se este versículo fosse transformado em oração, que pedido, agradecimento ou lamento surgiria?",
+    "O texto convida a falar com Deus com sinceridade? Que palavras ajudam você a começar?",
+    "Que sentimento desta passagem você gostaria de apresentar a Deus sem esconder?",
+    "Há algo pelo qual agradecer neste texto, sem ignorar outras realidades presentes?",
+    "Que pessoa ou situação poderia ser lembrada em uma oração inspirada por esta leitura?",
+    "O que você precisa pedir com humildade depois de ler este versículo?",
+    "Como uma oração baseada neste texto poderia incluir escuta e não apenas pedidos?",
+    "O versículo deixa alguma pergunta que você gostaria de levar a Deus?",
+    "Que compromisso de cuidado poderia acompanhar uma oração feita a partir desta passagem?",
+    "Se oração não é o tema explícito, que resposta interior honesta a leitura desperta?"
+  ],
+  [
+    "Qual resposta concreta e possível este versículo inspira, sem exigir mais do que você pode oferecer?",
+    "Que atitude pequena poderia colocar em prática a ideia central deste texto hoje?",
+    "Que hábito precisa ser iniciado, interrompido ou revisto à luz desta passagem?",
+    "Como você poderia viver este princípio em casa, no trabalho ou na comunidade?",
+    "Quem poderia se beneficiar de uma atitude inspirada por este versículo?",
+    "Que primeiro passo seria realista, seguro e coerente com o texto?",
+    "Como saber se sua aplicação corresponde à passagem e não apenas a uma preferência pessoal?",
+    "Que ajuda ou recurso tornaria possível responder a este texto com responsabilidade?",
+    "O que você pode fazer nesta semana para lembrar e praticar esta leitura?",
+    "Que mudança observável mostraria que esta passagem influenciou suas escolhas?"
+  ],
+  [
+    "Que qualidade de caráter aparece neste versículo ou é necessária para responder a ele?",
+    "Como a humildade poderia mudar a forma de você ler ou aplicar este texto?",
+    "Que atitude de coragem é descrita ou sugerida, e quais limites devem ser respeitados?",
+    "O que este versículo ensina sobre paciência em sua situação original?",
+    "Que exemplo de integridade aparece na passagem, se houver?",
+    "Como a gratidão mencionada ou sugerida poderia coexistir com a honestidade sobre dificuldades?",
+    "Que traço de caráter o texto questiona ou encoraja?",
+    "Como praticar a virtude sugerida sem transformar a fé em cobrança perfeccionista?",
+    "Que diferença existe entre a qualidade valorizada no texto e sua aparência externa?",
+    "Que pessoa demonstra uma atitude digna de reflexão, e o que a passagem realmente conta sobre ela?"
+  ],
+  [
+    "O texto fala de graça ou perdão? Como isso se relaciona com responsabilidade e reparação?",
+    "Se há perdão na passagem, ele elimina consequências ou convida a uma resposta responsável?",
+    "Que passo de reparação seria necessário depois de um erro descrito neste contexto?",
+    "Como receber misericórdia sem usá-la como desculpa para continuar ferindo alguém?",
+    "O versículo diferencia culpa, arrependimento e mudança? Que evidência há no contexto?",
+    "Que limites saudáveis são importantes ao pensar em reconciliação a partir deste texto?",
+    "Quem precisa ser ouvido ou protegido antes que uma relação possa ser restaurada?",
+    "Como o texto une compaixão à verdade, se esses temas aparecem juntos?",
+    "Que possibilidade de recomeço a passagem oferece, sem prometer que a confiança será reconstruída imediatamente?",
+    "Se não há perdão explícito, que resposta justa e cuidadosa ainda cabe diante do texto?"
+  ],
+  [
+    "Existe algo neste versículo que desafia uma interpretação popular ou apressada?",
+    "Que parte da mensagem pode ser fácil de esquecer se lermos apenas uma frase isolada?",
+    "O que este texto não está prometendo, mesmo que alguém possa querer ouvir essa promessa?",
+    "Que conclusão tentadora seria preciso evitar porque não está sustentada pelo contexto?",
+    "Há uma tensão ou paradoxo na passagem que merece ser mantido, em vez de simplificado?",
+    "Que detalhe poderia mudar o sentido se fosse traduzido ou explicado de outra forma?",
+    "Como evitar usar este versículo para julgar ou controlar outra pessoa?",
+    "Que diferença há entre descrever o que ocorreu e recomendar que todos façam o mesmo?",
+    "O que um leitor cuidadoso poderia questionar nesta interpretação?",
+    "Que parte da passagem você precisa manter em aberto até conhecer melhor seu contexto?"
+  ],
+  [
+    "Que emoção este versículo desperta em você, e como ela pode afetar sua interpretação?",
+    "Que experiência pessoal pode estar influenciando a maneira como você lê estas palavras?",
+    "Que palavra do texto oferece consolo e que palavra talvez provoque desconforto?",
+    "Há algo que você ainda não consegue aceitar ou compreender nesta passagem? Como reconhecer isso honestamente?",
+    "O que você gostaria de perguntar a alguém sábio sobre este versículo?",
+    "Como ler esta passagem com curiosidade, sem se condenar por ter dúvidas?",
+    "Que lembrança ou situação atual torna este texto especialmente significativo para você?",
+    "Qual seria uma resposta sincera à passagem, mesmo que ainda seja incompleta?",
+    "O que você precisa ouvir de outras pessoas antes de decidir como aplicar este texto?",
+    "Como suas emoções podem ser acolhidas sem substituir a atenção ao que o texto realmente diz?"
+  ],
+  [
+    "Que ensinamento deste versículo seria importante guardar e recordar mais tarde?",
+    "Como você explicaria a mensagem desta passagem a uma criança com palavras simples e fiéis?",
+    "Que pergunta sobre Deus ou sobre a vida este texto continua fazendo depois da leitura?",
+    "Que relação este versículo pode ter com outro texto bíblico, sem forçar uma conexão?",
+    "O que você aprendeu hoje que merece ser anotado para revisitar depois?",
+    "Que parte desta leitura você gostaria de compartilhar com alguém, e por quê?",
+    "Como este texto pode orientar uma conversa respeitosa com quem pensa diferente?",
+    "Que atitude ajuda a transformar esta leitura em lembrança viva, e não apenas informação?",
+    "O que você gostaria de compreender melhor ao estudar esta passagem novamente?",
+    "Qual frase curta, fiel ao contexto, você levaria consigo ao encerrar esta reflexão?"
+  ],
+  [
+    "Que esperança ou responsabilidade deste texto pode alcançar além de sua vida individual?",
+    "Que mudança comunitária a passagem sugere, se o contexto tratar de um grupo?",
+    "Como compartilhar a mensagem deste versículo sem tirar suas palavras do contexto?",
+    "Que pessoa ou grupo poderia ser esquecido ao aplicar esta passagem de forma individualista?",
+    "Como este texto inspira serviço sem incentivar exploração ou sobrecarga?",
+    "Que contribuição sua comunidade poderia oferecer em resposta ao princípio desta leitura?",
+    "O que significa testemunhar esta mensagem por atitudes, além de palavras?",
+    "Como a passagem pode ajudar a construir relações mais justas e solidárias?",
+    "Que responsabilidade coletiva aparece no texto e como ela poderia ser praticada?",
+    "Que fruto de cuidado e esperança você gostaria que esta leitura produzisse ao seu redor?"
+  ]
+];
+
+const dailyReflectionQuestions = dailyReflectionQuestionGroups.flat();
+if (dailyReflectionQuestions.length !== 200 || new Set(dailyReflectionQuestions).size !== 200) {
+  throw new Error("A pausa diária precisa conter exatamente 200 perguntas distintas.");
+}
+
+function getDailyReflectionQuestionPair(date = new Date()) {
+  const [year, month, day] = localDateKey(date).split("-").map(Number);
+  const epochDay = Math.floor((Date.UTC(year, month - 1, day) - Date.UTC(2026, 0, 1)) / 86400000);
+  const pairStart = ((epochDay % 100) + 100) % 100 * 2;
+  return dailyReflectionQuestions.slice(pairStart, pairStart + 2);
+}
+
+function renderDailyReflectionQuestions(date = new Date()) {
+  const list = document.getElementById("daily-reflection-questions");
+  if (!list) return;
+  list.replaceChildren(...getDailyReflectionQuestionPair(date).map((question) => {
+    const item = document.createElement("li");
+    item.textContent = question;
+    return item;
+  }));
 }
 
 async function loadBooks() {
   if (state.books.length) return state.books;
   const translation = state.translation;
-  const data = await fetchJson(`${BIBLE_API_ROOT}/${translation}`);
+  const books = translation === "almeida"
+    ? (await fetchJson(`${BIBLE_API_ROOT}/almeida`)).books
+    : await fetchHelloAoBooks(translation);
   if (translation !== state.translation) return loadBooks();
-  if (!Array.isArray(data.books) || !data.books.length) throw new Error("A API não retornou a lista de livros.");
-  state.books = data.books;
+  if (!Array.isArray(books) || !books.length) throw new Error("A API não retornou a lista de livros.");
+  state.books = books.map((book) => ({
+    id: book.id,
+    name: book.commonName || book.name,
+    numberOfChapters: book.numberOfChapters
+  }));
+  if (translation !== "almeida") {
+    state.chaptersByBook = Object.fromEntries(state.books.map((book) => [
+      book.id,
+      Array.from({ length: book.numberOfChapters }, (_, index) => index + 1)
+    ]));
+  }
   saveState();
   return state.books;
 }
@@ -1185,7 +1576,7 @@ async function loadBooks() {
 async function loadBookChapters(bookId) {
   if (Array.isArray(state.chaptersByBook[bookId])) return state.chaptersByBook[bookId];
   const translation = state.translation;
-  const data = await fetchJson(`${BIBLE_API_ROOT}/${translation}/${encodeURIComponent(bookId)}`);
+  const data = await fetchJson(`${BIBLE_API_ROOT}/almeida/${encodeURIComponent(bookId)}`);
   if (translation !== state.translation) return loadBookChapters(bookId);
   if (!Array.isArray(data.chapters) || !data.chapters.length) throw new Error("Não foi possível encontrar os capítulos deste livro.");
   state.chaptersByBook[bookId] = data.chapters.map((chapter) => chapter.chapter);
@@ -1225,10 +1616,8 @@ function populateTranslationSelectors() {
   document.getElementById("reader-translation").innerHTML = options;
   document.getElementById("daily-translation").value = state.translation;
   document.getElementById("reader-translation").value = state.translation;
-  const source = document.getElementById("bible-source-label");
-  if (source) source.textContent = `Fonte: API pública bible-api.com · ${translationLabel()}.`;
-  const dailySource = document.getElementById("daily-source-label");
-  if (dailySource) dailySource.textContent = `Texto fornecido pela API pública bible-api.com · ${translationLabel()}. É necessária conexão com a internet para carregar novas passagens.`;
+  renderTranslationAttribution("bible-source-label", "Fonte: ");
+  renderTranslationAttribution("daily-source-label", "Versículo: ", " As leituras precisam de conexão com a internet.");
 }
 
 function changeTranslation(translationId) {
@@ -1270,7 +1659,9 @@ async function loadReaderChapter() {
   try {
     let data = state.cachedChapters[cacheKey];
     if (!data) {
-      data = await fetchJson(`${bibleApiBase()}/${encodeURIComponent(bookId)}/${chapter}`);
+      const translation = state.translation;
+      data = await fetchBibleChapter(translation, bookId, chapter);
+      if (requestId !== readerRequestId) return;
       if (!Array.isArray(data.verses)) throw new Error("A API não retornou os versículos deste capítulo.");
       state.cachedChapters[cacheKey] = data;
       const cacheKeys = Object.keys(state.cachedChapters);
@@ -1319,7 +1710,9 @@ function renderReader(verses) {
 }
 
 function findVerse(reference) {
-  for (const data of Object.values(state.cachedChapters)) {
+  const translationPrefix = `${state.translation}:`;
+  for (const [key, data] of Object.entries(state.cachedChapters)) {
+    if (!key.startsWith(translationPrefix)) continue;
     const verse = data.verses && data.verses.find((item) => referenceFor(item) === reference);
     if (verse) return verse;
   }
@@ -1938,6 +2331,28 @@ document.getElementById("plan-days").addEventListener("input", (event) => {
 });
 document.getElementById("daily-translation").addEventListener("change", (event) => changeTranslation(event.target.value));
 document.getElementById("reader-translation").addEventListener("change", (event) => changeTranslation(event.target.value));
+document.querySelector(".profile-button").addEventListener("click", () => requestWelcomeName(true));
+document.getElementById("welcome-name-dialog").addEventListener("cancel", (event) => {
+  if (!state.personName) {
+    event.preventDefault();
+    document.getElementById("welcome-name-input").focus();
+  }
+});
+document.getElementById("welcome-name-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = document.getElementById("welcome-name-input");
+  const name = input.value.trim().replace(/\s+/g, " ").slice(0, 40);
+  if (!name) {
+    input.setCustomValidity("Digite seu nome para continuar.");
+    input.reportValidity();
+    return;
+  }
+  input.setCustomValidity("");
+  state.personName = name;
+  saveState();
+  renderWelcomeName();
+  document.getElementById("welcome-name-dialog").close();
+});
 document.getElementById("daily-favorite").addEventListener("click", () => {
   if (!state.dailyVerse) return;
   saveVerse({ book: state.dailyVerse.reference.replace(/\s+\d+:\d+$/, ""), chapter: Number(state.dailyVerse.reference.match(/\s(\d+):\d+$/)[1]), verse: Number(state.dailyVerse.reference.match(/:(\d+)$/)[1]), text: state.dailyVerse.text });
@@ -2017,6 +2432,8 @@ function startApp() {
     saveState();
   }
   document.body.classList.add("dark-mode");
+  renderWelcomeName();
+  requestWelcomeName();
   renderFavorites();
   updateStats();
   renderQuiz();

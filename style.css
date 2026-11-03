@@ -392,6 +392,17 @@ h1, h2 { font-family: Manrope, sans-serif; letter-spacing: -1.2px; }
 .note-dialog textarea { width: 100%; resize: vertical; padding: 12px; border: 1px solid #ede9f2; border-radius: 9px; color: #5d566d; font-size: 11px; line-height: 1.6; }
 .note-dialog textarea::placeholder { color: #b1aab8; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 13px; }
+.welcome-name-dialog { width: min(420px, calc(100vw - 30px)); padding: 0; border: 1px solid #303849; border-radius: 17px; background: #12161d; color: #d7dae0; box-shadow: 0 24px 80px #0009; }
+.welcome-name-dialog::backdrop { background: #05070bbd; backdrop-filter: blur(5px); }
+.welcome-name-dialog form { display: grid; justify-items: center; padding: 29px; text-align: center; }
+.welcome-name-dialog .install-dialog-icon { margin-bottom: 12px; background: #1b2030; color: #4fc1ff; }
+.welcome-name-dialog .eyebrow { margin: 0 0 8px; color: #4fc1ff; }
+.welcome-name-dialog h2 { margin: 0 0 9px; color: #e6edf3; font-size: 21px; }
+.welcome-name-dialog p:not(.eyebrow) { margin: 0 0 18px; color: #aab4c3; font-size: 12px; line-height: 1.65; }
+.welcome-name-dialog label { justify-self: stretch; margin-bottom: 6px; color: #c1cad6; font-size: 11px; font-weight: 700; text-align: left; }
+.welcome-name-dialog input { width: 100%; padding: 12px; border: 1px solid #344050; border-radius: 9px; background: #0e1218; color: #e6edf3; font-size: 14px; }
+.welcome-name-dialog input::placeholder { color: #778396; }
+.welcome-name-dialog .primary-button { width: 100%; margin-top: 14px; }
 .toast { position: fixed; right: 24px; bottom: 23px; z-index: 9; max-width: min(360px, calc(100vw - 32px)); padding: 12px 16px; border-radius: 10px; background: #332b49; color: #fff; font-size: 11px; box-shadow: 0 8px 25px #2924432b; opacity: 0; pointer-events: none; transform: translateY(9px); transition: opacity .2s, transform .2s; }
 .toast.visible { opacity: 1; transform: translateY(0); }
 .mobile-nav { display: none; }
@@ -487,6 +498,7 @@ body.app-installed.dark-mode {
 .app-installed .plan-day,
 .app-installed .quiz-option,
 .app-installed .note-dialog,
+.app-installed .welcome-name-dialog,
 .app-installed .worship-category,
 .app-installed .worship-note,
 .app-installed .install-dialog {
@@ -510,6 +522,8 @@ body.app-installed.dark-mode {
 .app-installed .profile-copy strong { color: #d7dae0; }
 .app-installed .breadcrumb strong, .app-installed .day-reference { color: #4fc1ff; }
 .app-installed .welcome-row h1 > span:first-child, .app-installed .page-intro h1 span { color: #c586f7; }
+.app-installed .welcome-row h1 > #welcome-greeting-prefix { color: #e6edf3; }
+.app-installed #welcome-name { color: #c586f7; }
 .app-installed .welcome-message { color: #4fc1ff; }
 .app-installed .free-distribution { border-color: #344356; background: #111923; color: #4fc1ff; }
 .app-installed .welcome-copy, .app-installed .muted-copy,
@@ -583,6 +597,7 @@ body.app-installed.dark-mode {
 .app-installed .plan-scripture, .app-installed .demo-inline,
 .app-installed .favorite-note { border-color: #344050; background: #171d27; color: #bdc9d8; }
 .app-installed .demo-notice { border-color: #263545; background: #111923; color: #9eb4c9; }
+.app-installed .demo-notice a, .app-installed .demo-inline a { color: #4fc1ff; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 .app-installed .kids-study { border-color: #303640; border-left-color: #c586f7; background: #12161d; }
 .app-installed .kids-study-summary > strong,
 .app-installed .kids-teaching h3, .app-installed .kids-quiz h3,
@@ -614,6 +629,10 @@ body.app-installed.dark-mode {
 .app-installed .mobile-nav button { color: #9ba3b4; }
 .app-installed .mobile-nav button.active { color: #4fc1ff; }
 .app-installed .note-dialog textarea { border-color: #303948; background: #0e1218; color: #d7dae0; }
+.app-installed .welcome-name-dialog input { border-color: #344050; background: #0e1218; color: #e6edf3; }
+.app-installed .welcome-name-dialog label { color: #c1cad6; }
+.app-installed .welcome-name-dialog h2 { color: #e6edf3; }
+.app-installed .welcome-name-dialog p:not(.eyebrow) { color: #aab4c3; }
 .app-installed .note-dialog .eyebrow { color: #8793a5; }
 .app-installed .dialog-close { background: #222935; color: #d7dae0; }
 .app-installed .empty-state, .app-installed .reader-empty { color: #9ba3b4; }
@@ -758,5 +777,8 @@ body.app-installed.dark-mode {
 .daily-reflection { position: relative; z-index: 1; margin: 0 0 16px; padding-top: 11px; border-top: 1px solid #30394a; }
 .daily-reflection > span { color: #4ec9b0; font-size: 8px; font-weight: 700; letter-spacing: 1.2px; }
 .daily-reflection p { max-width: 850px; margin: 5px 0 0; color: #c1cad6; font-size: 11px; line-height: 1.65; }
+.reflection-questions { display: grid; gap: 8px; max-width: 850px; margin: 11px 0 0; padding: 0; list-style: none; counter-reset: reflection-question; }
+.reflection-questions li { position: relative; min-height: 30px; padding: 8px 10px 8px 36px; border: 1px solid #293747; border-radius: 8px; background: #111923; color: #d7dae0; font-size: 10px; line-height: 1.6; counter-increment: reflection-question; }
+.reflection-questions li::before { position: absolute; top: 8px; left: 10px; color: #4ec9b0; font-weight: 700; content: counter(reflection-question, decimal-leading-zero); }
 .demo-notice { display: flex; gap: 8px; margin: 18px 0 0; padding: 11px 13px; border: 1px solid #263545; border-radius: 9px; background: #111923; color: #9eb4c9; font-size: 9px; line-height: 1.6; }
 .install-wall-card .primary-button { min-height: 42px; }

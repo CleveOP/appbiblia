@@ -1,4 +1,4 @@
-const CACHE_NAME = "palavra-viva-v5";
+const CACHE_NAME = "palavra-viva-v9";
 const APP_SHELL = [
   "./",
   "./index.html",
